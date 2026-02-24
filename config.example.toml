@@ -1,0 +1,30 @@
+# HydraLLM Configuration
+# This is the default config template embedded in the binary.
+
+[server]
+host = "127.0.0.1"
+port = 8080
+read_timeout = "60s"
+write_timeout = "10m"
+
+[log]
+level = "info"
+include_error_body = false
+
+[retry]
+max_cycles = 10
+default_timeout = "10m"
+default_interval = "100ms"
+exponential_backoff = false
+
+# Example endpoint configuration:
+# [endpoints.openai]
+# url = "https://api.openai.com/v1"
+# api_key = "$OPENAI_API_KEY"
+
+# Example model configuration:
+# [[models]]
+# endpoint = "openai"
+# type = "openai"
+# model = "gpt-4o"
+# attempts = 3
