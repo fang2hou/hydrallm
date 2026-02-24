@@ -1,0 +1,25 @@
+name: "🔍 PR Check"
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check-pr-title:
+    name: "📝 Check PR Title"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: "📦 Setup cocogitto"
+        uses: cocogitto/cocogitto-action@v3
+
+      - name: "🔍 Verify PR title"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR Title: $PR_TITLE"
+          echo "$PR_TITLE" | cog verify -
