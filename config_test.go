@@ -196,6 +196,36 @@ func TestValidateConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("mixed model types are rejected", func(t *testing.T) {
+		cfg := &Config{
+			Endpoints: map[string]Endpoint{
+				"openai":    {URL: "http://localhost:8001"},
+				"anthropic": {URL: "http://localhost:8002"},
+			},
+			Models: []Model{
+				{Endpoint: "openai", Model: "gpt-4", Type: "openai"},
+				{Endpoint: "anthropic", Model: "claude-3", Type: "anthropic"},
+			},
+		}
+		if err := cfg.validate(); err == nil {
+			t.Error("expected error for mixed model types")
+		}
+	})
+
+	t.Run("unsupported model type is rejected", func(t *testing.T) {
+		cfg := &Config{
+			Endpoints: map[string]Endpoint{
+				"e1": {URL: "http://localhost"},
+			},
+			Models: []Model{
+				{Endpoint: "e1", Model: "gpt-4", Type: "azure"},
+			},
+		}
+		if err := cfg.validate(); err == nil {
+			t.Error("expected error for unsupported model type")
+		}
+	})
+
 	t.Run("invalid endpoint URL", func(t *testing.T) {
 		cfg := &Config{
 			Endpoints: map[string]Endpoint{
