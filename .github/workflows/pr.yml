@@ -14,7 +14,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: "🔍 Verify PR title"
+      - name: "📦 Setup cocogitto"
         uses: cocogitto/cocogitto-action@v4
         with:
-          command: 'verify "${{ github.event.pull_request.title }}"'
+          command: --version
+
+      - name: "🔍 Verify PR title"
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR Title: $PR_TITLE"
+          echo "$PR_TITLE" | cog verify -
