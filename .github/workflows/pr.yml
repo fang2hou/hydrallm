@@ -24,4 +24,5 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           echo "PR Title: $PR_TITLE"
-          echo "$PR_TITLE" | cog verify -
+          printf '%s\n' "$PR_TITLE" > pr-title.txt
+          cog verify --file pr-title.txt
