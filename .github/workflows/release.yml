@@ -172,8 +172,8 @@ jobs:
           BINARY_NAME="${{ env.BINARY_NAME }}"
           FORMULA_NAME="${{ env.HOMEBREW_FORMULA_NAME }}"
           FORMULA_CLASS="$(echo "$FORMULA_NAME" | sed -E 's/(^|[-_])([a-z])/\U\2/g')"
-          PROJECT_HOMEPAGE="${{ vars.PROJECT_HOMEPAGE || format('https://github.com/{0}', github.repository) }}"
-          PROJECT_DESC="${{ vars.PROJECT_DESCRIPTION || 'CLI application' }}"
+          PROJECT_HOMEPAGE="${{ env.PROJECT_HOMEPAGE || format('https://github.com/{0}', github.repository) }}"
+          PROJECT_DESC="${{ env.PROJECT_DESCRIPTION || 'CLI application' }}"
           SERVICE_SUBCOMMAND="${{ env.HOMEBREW_SERVICE_SUBCOMMAND }}"
 
           FORMULA="homebrew-tap/Formula/${FORMULA_NAME}.rb"
