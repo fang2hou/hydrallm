@@ -1,0 +1,48 @@
+[server]
+host = "0.0.0.0"
+port = 8101
+read_timeout = "60s"
+write_timeout = "10m"
+
+[log]
+level = "info"
+
+[retry]
+max_cycles = 10
+default_timeout = "10m"
+default_interval = "100ms"
+exponential_backoff = false
+
+[endpoints.zai-coding-plan-global]
+url = "https://api.z.ai/api/coding/paas/v4"
+api_key = "$ZAI_API_KEY"
+strip_version_prefix = true
+
+[endpoints.zai-coding-plan-cn]
+url = "https://open.bigmodel.cn/api/coding/paas/v4"
+api_key = "$ZAI_API_KEY"
+strip_version_prefix = true
+
+[[models]]
+endpoint = "zai-coding-plan-global"
+type = "openai"
+model = "glm-5"
+attempts = 5
+
+[[models]]
+endpoint = "zai-coding-plan-cn"
+type = "openai"
+model = "glm-5"
+attempts = 2
+
+[[models]]
+endpoint = "zai-coding-plan-global"
+type = "openai"
+model = "glm-4.7"
+attempts = 2
+
+[[models]]
+endpoint = "zai-coding-plan-cn"
+type = "openai"
+model = "glm-4.7"
+attempts = 2
