@@ -1,30 +1,42 @@
 # HydraLLM
 
-LLM API proxy with automatic retry and model fallback.
+HydraLLM is a high-performance LLM API proxy with automatic retry and model fallback.
 
-When a request fails, it automatically tries the next configured model until success or all models exhausted.
+When a request fails, HydraLLM retries the same model and falls back to the next configured model until a request succeeds or all attempts are exhausted.
 
-## Install
+## ✨ Why HydraLLM
 
-### Homebrew
+- Improve reliability for coding workflows and agent workloads.
+- Reduce failed requests caused by transient upstream errors.
+- Keep one local API entrypoint while switching providers/models behind the scenes.
+- Support OpenAI-compatible, Anthropic, and AWS Bedrock endpoints.
+
+## 📦 Install
+
+### Homebrew (macOS / Linux)
 
 ```bash
 brew install fang2hou/tap/hydrallm
 ```
 
-### Binary Download
+### Binary Download (All platforms)
 
-Download the latest release from [GitHub Releases](https://github.com/fang2hou/hydrallm/releases)
+Download the latest release from [GitHub Releases](https://github.com/fang2hou/hydrallm/releases).
 
-### Install via Go
+### Install via Go (All platforms)
 
 ```bash
 go install github.com/fang2hou/hydrallm@latest
 ```
 
-## Try It
+## 🚀 Quick Start (GLM Coding Plan)
 
-### Using GLM-5 Coding Plan
+Choose one quick start below.
+
+<details>
+<summary><b>GLM OpenAI Quick Start</b></summary>
+
+### 1) Prepare config
 
 **macOS / Linux:**
 
@@ -32,9 +44,6 @@ go install github.com/fang2hou/hydrallm@latest
 mkdir -p ~/.config/hydrallm
 curl -o ~/.config/hydrallm/config.toml \
   https://raw.githubusercontent.com/fang2hou/hydrallm/main/showcases/glm-5-coding-plan-openai.toml
-
-export ZAI_API_KEY="your-api-key"
-hydrallm
 ```
 
 **Windows (PowerShell):**
@@ -42,132 +51,188 @@ hydrallm
 ```powershell
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\hydrallm"
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/fang2hou/hydrallm/main/showcases/glm-5-coding-plan-openai.toml" -OutFile "$env:USERPROFILE\.config\hydrallm\config.toml"
+```
 
+### 2) Set API key
+
+**macOS / Linux:**
+
+```bash
+export ZAI_API_KEY="your-api-key"
+```
+
+**Windows (PowerShell):**
+
+```powershell
 $env:ZAI_API_KEY = "your-api-key"
+```
+
+### 3) Start proxy
+
+```bash
 hydrallm
 ```
 
-Server runs at `http://127.0.0.1:8101`.
+This showcase listens on `http://127.0.0.1:8101`.
 
-### Custom Setup
+### 4) Verify with a request
 
 ```bash
-hydrallm edit    # Opens config template in $EDITOR
-hydrallm         # Start server
-```
-
-## Configuration
-
-Config file: `~/.config/hydrallm/config.toml`
-
-### Minimal Example
-
-```toml
-[endpoints.openai]
-url = "https://api.openai.com/v1"
-api_key = "$OPENAI_API_KEY"   # Use $ prefix for env vars
-
-[[models]]
-endpoint = "openai"
-type = "openai"
-model = "gpt-4o"
-attempts = 3
-```
-
-### Model Fallback
-
-Models are tried in order. Each can have multiple retry attempts:
-
-```toml
-[[models]]
-endpoint = "openai"
-model = "gpt-4o"
-attempts = 3
-
-[[models]]
-endpoint = "azure"
-model = "gpt-4o"
-attempts = 2
-```
-
-<details>
-<summary><b>API Types</b></summary>
-
-**OpenAI** (default)
-```toml
-[endpoints.openai]
-url = "https://api.openai.com/v1"
-api_key = "$OPENAI_API_KEY"
-```
-
-**Anthropic**
-```toml
-[endpoints.anthropic]
-url = "https://api.anthropic.com/v1"
-api_key = "$ANTHROPIC_API_KEY"
-
-[[models]]
-endpoint = "anthropic"
-type = "anthropic"
-model = "claude-3-5-sonnet-20241022"
-```
-
-**AWS Bedrock**
-```toml
-[endpoints.bedrock]
-url = "https://bedrock-runtime.us-east-1.amazonaws.com"
-aws_region = "us-east-1"
-aws_access_key_id = "$AWS_ACCESS_KEY_ID"
-aws_secret_access_key = "$AWS_SECRET_ACCESS_KEY"
-aws_session_token = "$AWS_SESSION_TOKEN"
-
-[[models]]
-endpoint = "bedrock"
-type = "bedrock"
-model = "anthropic.claude-3-sonnet-20240229-v1:0"
+curl http://127.0.0.1:8101/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "placeholder",
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
 ```
 
 </details>
 
 <details>
-<summary><b>Full Options</b></summary>
+<summary><b>GLM Anthropic Quick Start</b></summary>
 
-```toml
-[server]
-host = "127.0.0.1"
-port = 8080
-read_timeout = "60s"
-write_timeout = "10m"
+### 1) Prepare config
 
-[log]
-level = "info"              # debug, info, warn, error
-include_error_body = false
+**macOS / Linux:**
 
-[retry]
-max_cycles = 10
-default_timeout = "30s"
-default_interval = "100ms"
-exponential_backoff = false
+```bash
+mkdir -p ~/.config/hydrallm
+curl -o ~/.config/hydrallm/config.toml \
+  https://raw.githubusercontent.com/fang2hou/hydrallm/main/showcases/glm-5-coding-plan-anthropic.toml
+```
 
-[[models]]
-endpoint = "openai"
-type = "openai"
-model = "gpt-4o"
-attempts = 3
-timeout = "30s"             # optional override
-interval = "200ms"          # optional override
+**Windows (PowerShell):**
+
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\hydrallm"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/fang2hou/hydrallm/main/showcases/glm-5-coding-plan-anthropic.toml" -OutFile "$env:USERPROFILE\.config\hydrallm\config.toml"
+```
+
+### 2) Set API key
+
+**macOS / Linux:**
+
+```bash
+export ZAI_API_KEY="your-api-key"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+$env:ZAI_API_KEY = "your-api-key"
+```
+
+### 3) Start proxy
+
+```bash
+hydrallm
+```
+
+This showcase listens on `http://127.0.0.1:8102`.
+
+### 4) Verify with a request
+
+```bash
+curl http://127.0.0.1:8102/v1/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "placeholder",
+    "max_tokens": 64,
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
 ```
 
 </details>
 
-## Commands
+HydraLLM overrides the request `model` based on your configured model chain.
+
+## 🔁 Service (Auto Start on Boot)
+
+Use Homebrew service for auto-start.
+
+### Start
 
 ```bash
-hydrallm           # Start server
-hydrallm edit      # Edit config
-hydrallm version   # Show version
+brew services start hydrallm
 ```
 
-## License
+### Status
+
+```bash
+brew services info hydrallm
+```
+
+### Restart / Stop
+
+```bash
+brew services restart hydrallm
+brew services stop hydrallm
+```
+
+Notes:
+
+- On macOS, `brew services start hydrallm` runs via `launchd` (auto-start after login).
+- On Linux, `brew services` uses `systemd`.
+- If config uses `$ENV_VAR`, make sure those variables are available to the service environment.
+
+## ⚙️ Configuration
+
+For full configuration details, see [CONFIGURATION.md](CONFIGURATION.md).
+
+## 🛠️ CLI Commands
+
+```bash
+hydrallm                 # Start server
+hydrallm serve           # Start server
+hydrallm edit            # Open config in $EDITOR
+hydrallm version         # Print version info
+hydrallm --help
+```
+
+Global flags:
+
+```bash
+hydrallm --config /path/to/config.toml
+hydrallm --host 127.0.0.1 --port 8080 --log-level info
+```
+
+## 🧯 Troubleshooting
+
+Quick diagnostics:
+
+```bash
+hydrallm --config /path/to/config.toml --log-level debug
+brew services list | grep hydrallm
+```
+
+<details>
+<summary><b>config validation failed: at least one model must be configured</b></summary>
+
+Add at least one `[[models]]` entry in your config file.
+
+</details>
+
+<details>
+<summary><b>endpoint "..." not found</b></summary>
+
+Ensure each model `endpoint` matches a key under `[endpoints.&lt;name&gt;]`.
+
+</details>
+
+<details>
+<summary><b>Service starts but auth fails</b></summary>
+
+The service manager (`launchd`/`systemd`) may not have your shell environment variables. Ensure required variables are available to the service process.
+
+</details>
+
+<details>
+<summary><b>Requests return upstream 4xx/5xx</b></summary>
+
+Temporarily set `log.include_error_body = true` to inspect upstream error responses.
+
+</details>
+
+## 📄 License
 
 MIT
