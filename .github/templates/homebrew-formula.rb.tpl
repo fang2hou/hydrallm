@@ -54,6 +54,9 @@ class __FORMULA_CLASS__ < Formula
       To start __BINARY_NAME__ as a background service:
         brew services start __FORMULA_NAME__
 
+      Note: brew services runs under launchd/systemd and may not inherit your shell environment.
+      For authentication, configure `api_key` explicitly in your config instead of relying on environment variables.
+
       To run __BINARY_NAME__ directly:
         __BINARY_NAME__ __SERVICE_SUBCOMMAND__
     EOS

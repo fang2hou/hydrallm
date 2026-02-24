@@ -173,7 +173,7 @@ Notes:
 
 - On macOS, `brew services start hydrallm` runs via `launchd` (auto-start after login).
 - On Linux, `brew services` uses `systemd`.
-- If config uses `$ENV_VAR`, make sure those variables are available to the service environment.
+- For `brew services`, configure `api_key` explicitly in the config file; do not rely on shell environment variables.
 
 ## ⚙️ Configuration
 
@@ -222,7 +222,7 @@ Ensure each model `endpoint` matches a key under `[endpoints.&lt;name&gt;]`.
 <details>
 <summary><b>Service starts but auth fails</b></summary>
 
-The service manager (`launchd`/`systemd`) may not have your shell environment variables. Ensure required variables are available to the service process.
+The service manager (`launchd`/`systemd`) may not have your shell environment variables. Use explicit `api_key` values in your config for service mode.
 
 </details>
 
