@@ -6,6 +6,18 @@ When a request fails, it automatically tries the next configured model until suc
 
 ## Install
 
+### Homebrew
+
+```bash
+brew install fang2hou/tap/hydrallm
+```
+
+### Binary Download
+
+Download the latest release from [GitHub Releases](https://github.com/fang2hou/hydrallm/releases)
+
+### Install via Go
+
 ```bash
 go install github.com/fang2hou/hydrallm@latest
 ```
