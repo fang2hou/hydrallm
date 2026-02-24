@@ -188,6 +188,7 @@ func (c *Config) validate() error {
 	}
 
 	// Validate models
+	configType := ""
 	for i := range c.Models {
 		m := &c.Models[i]
 
@@ -203,6 +204,23 @@ func (c *Config) validate() error {
 		}
 		if m.Type == "" {
 			return fmt.Errorf("model %d: type is required", i)
+		}
+		if !isSupportedModelType(m.Type) {
+			return fmt.Errorf(
+				"model %d: unsupported type %q (supported: openai, anthropic, bedrock)",
+				i,
+				m.Type,
+			)
+		}
+		if configType == "" {
+			configType = m.Type
+		} else if m.Type != configType {
+			return fmt.Errorf(
+				"model %d: mixed model types are not allowed (expected %q, got %q)",
+				i,
+				configType,
+				m.Type,
+			)
 		}
 		if m.Attempts <= 0 {
 			m.Attempts = 1
@@ -220,6 +238,15 @@ func (c *Config) validate() error {
 	}
 
 	return nil
+}
+
+func isSupportedModelType(modelType string) bool {
+	switch modelType {
+	case "openai", "anthropic", "bedrock":
+		return true
+	default:
+		return false
+	}
 }
 
 // validateBedrockCredentials validates AWS credentials for bedrock endpoints.
