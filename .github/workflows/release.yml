@@ -31,7 +31,7 @@ jobs:
           go-version-file: "go.mod"
 
       - name: "📦 Setup cocogitto"
-        uses: cocogitto/cocogitto-action@v3
+        uses: cocogitto/cocogitto-action@v4
         with:
           command: --version
 
@@ -103,7 +103,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
 
       - name: "📤 Upload artifacts for homebrew update"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-info
           path: |
@@ -116,7 +116,7 @@ jobs:
     needs: release
     steps:
       - name: "📥 Download artifacts"
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: release-info
           path: dist
