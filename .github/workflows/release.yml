@@ -32,6 +32,8 @@ jobs:
 
       - name: "📦 Setup cocogitto"
         uses: cocogitto/cocogitto-action@v3
+        with:
+          command: --version
 
       - name: "📝 Generate changelog"
         run: |
