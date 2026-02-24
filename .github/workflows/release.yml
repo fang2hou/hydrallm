@@ -9,10 +9,11 @@ permissions:
   contents: write
 
 env:
-  BINARY_NAME: ${{ vars.BINARY_NAME || github.event.repository.name }}
-  HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY || 'fang2hou/homebrew-tap' }}
-  HOMEBREW_FORMULA_NAME: ${{ vars.HOMEBREW_FORMULA_NAME || github.event.repository.name }}
-  HOMEBREW_SERVICE_SUBCOMMAND: ${{ vars.HOMEBREW_SERVICE_SUBCOMMAND || 'serve' }}
+  BINARY_NAME: ${{ github.event.repository.name }}
+  HOMEBREW_TAP_REPOSITORY: fang2hou/homebrew-tap
+  HOMEBREW_FORMULA_NAME: ${{ github.event.repository.name }}
+  HOMEBREW_SERVICE_SUBCOMMAND: serve
+  PROJECT_DESCRIPTION: High-performance LLM API proxy with automatic retry and fallback
 
 jobs:
   release:
