@@ -121,6 +121,11 @@ jobs:
           name: release-info
           path: dist
 
+      - name: "📥 Checkout source repository"
+        uses: actions/checkout@v6
+        with:
+          path: source
+
       - name: "📥 Checkout homebrew-tap"
         uses: actions/checkout@v6
         with:
@@ -142,7 +147,7 @@ jobs:
           SERVICE_SUBCOMMAND="${{ env.HOMEBREW_SERVICE_SUBCOMMAND }}"
 
           FORMULA="homebrew-tap/Formula/${FORMULA_NAME}.rb"
-          TEMPLATE_FILE=".github/templates/homebrew-formula.rb.tpl"
+          TEMPLATE_FILE="source/.github/templates/homebrew-formula.rb.tpl"
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}"
 
           if [ ! -f "$TEMPLATE_FILE" ]; then
