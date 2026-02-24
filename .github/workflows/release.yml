@@ -53,6 +53,36 @@ jobs:
             cog changelog --template full_hash > RELEASE_NOTES.md
           fi
 
+      - name: "🧹 Normalize changelog formatting"
+        run: |
+          awk '
+            BEGIN {
+              prev_was_bullet = 0
+              pending_blank = 0
+            }
+
+            {
+              if ($0 ~ /^[[:space:]]*$/) {
+                pending_blank = 1
+                next
+              }
+
+              is_bullet = ($0 ~ /^- /)
+
+              if (pending_blank) {
+                if (!(prev_was_bullet && is_bullet)) {
+                  print ""
+                }
+                pending_blank = 0
+              }
+
+              print
+              prev_was_bullet = is_bullet
+            }
+          ' RELEASE_NOTES.md > RELEASE_NOTES.normalized.md
+
+          mv RELEASE_NOTES.normalized.md RELEASE_NOTES.md
+
       - name: "🔨 Build binaries"
         run: |
           mkdir -p dist
@@ -174,35 +204,20 @@ jobs:
           LINUX_AMD64_SHA=$(sha256sum "dist/${BINARY_NAME}-linux-amd64.tar.gz" | cut -d' ' -f1)
           LINUX_ARM64_SHA=$(sha256sum "dist/${BINARY_NAME}-linux-arm64.tar.gz" | cut -d' ' -f1)
 
-          python3 - << 'PY'
-          import os
-          from pathlib import Path
-
-          template = Path(os.environ["TEMPLATE_FILE"]).read_text(encoding="utf-8")
-          replacements = {
-              "FORMULA_CLASS": os.environ["FORMULA_CLASS"],
-              "PROJECT_DESC": os.environ["PROJECT_DESC"],
-              "PROJECT_HOMEPAGE": os.environ["PROJECT_HOMEPAGE"],
-              "VERSION": os.environ["VERSION"],
-              "BASE_URL": os.environ["BASE_URL"],
-              "BINARY_NAME": os.environ["BINARY_NAME"],
-              "DARWIN_AMD64_SHA": os.environ["DARWIN_AMD64_SHA"],
-              "DARWIN_ARM64_SHA": os.environ["DARWIN_ARM64_SHA"],
-              "LINUX_AMD64_SHA": os.environ["LINUX_AMD64_SHA"],
-              "LINUX_ARM64_SHA": os.environ["LINUX_ARM64_SHA"],
-              "SERVICE_SUBCOMMAND": os.environ["SERVICE_SUBCOMMAND"],
-              "FORMULA_NAME": os.environ["FORMULA_NAME"],
-          }
-
-          for key, value in replacements.items():
-              template = template.replace(f"__{key}__", value)
-
-          unresolved = __import__("re").findall(r"__[A-Z0-9_]+__", template)
-          if unresolved:
-              raise SystemExit(f"Unresolved placeholders in formula template: {', '.join(sorted(set(unresolved)))}")
-
-          Path(os.environ["FORMULA"]).write_text(template, encoding="utf-8")
-          PY
+            sed \
+              -e "s|__FORMULA_CLASS__|${FORMULA_CLASS}|g" \
+              -e "s|__PROJECT_DESC__|${PROJECT_DESC}|g" \
+              -e "s|__PROJECT_HOMEPAGE__|${PROJECT_HOMEPAGE}|g" \
+              -e "s|__VERSION__|${VERSION}|g" \
+              -e "s|__BASE_URL__|${BASE_URL}|g" \
+              -e "s|__BINARY_NAME__|${BINARY_NAME}|g" \
+              -e "s|__DARWIN_AMD64_SHA__|${DARWIN_AMD64_SHA}|g" \
+              -e "s|__DARWIN_ARM64_SHA__|${DARWIN_ARM64_SHA}|g" \
+              -e "s|__LINUX_AMD64_SHA__|${LINUX_AMD64_SHA}|g" \
+              -e "s|__LINUX_ARM64_SHA__|${LINUX_ARM64_SHA}|g" \
+              -e "s|__SERVICE_SUBCOMMAND__|${SERVICE_SUBCOMMAND}|g" \
+              -e "s|__FORMULA_NAME__|${FORMULA_NAME}|g" \
+              "$TEMPLATE_FILE" > "$FORMULA"
 
           echo "Updated ${FORMULA_NAME} formula to version ${VERSION}"
 
