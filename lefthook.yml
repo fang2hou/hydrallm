@@ -9,7 +9,7 @@ pre-commit:
   jobs:
     - name: "Run linter"
       glob: "*.go"
-      run: golangci-lint run --fix {staged_files} && git add {staged_files}
+      run: golangci-lint run --fix ./... && git add {staged_files}
 
     - name: "Check formatting"
       glob: "*.go"
