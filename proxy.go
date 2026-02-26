@@ -7,8 +7,14 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-func newProxy(cfg *Config, logger *log.Logger) *httputil.ReverseProxy {
-	transport := newRetryTransport(cfg, logger)
+func newProxy(listener *Listener, cfg *Config, logger *log.Logger) *httputil.ReverseProxy {
+	transport := newRetryTransport(
+		listener.ResolvedModels,
+		cfg.Providers,
+		cfg.Retry,
+		cfg.Log,
+		logger,
+	)
 
 	return &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {

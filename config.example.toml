@@ -1,12 +1,6 @@
 # HydraLLM Configuration
 # This is the default config template embedded in the binary.
 
-[server]
-host = "127.0.0.1"
-port = 8080
-read_timeout = "60s"
-write_timeout = "10m"
-
 [log]
 level = "info"
 include_error_body = false
@@ -17,14 +11,45 @@ default_timeout = "10m"
 default_interval = "100ms"
 exponential_backoff = false
 
-# Example endpoint configuration:
-# [endpoints.openai]
+# Provider configuration
+# [providers.openai]
 # url = "https://api.openai.com/v1"
 # api_key = "$OPENAI_API_KEY"
 
-# Example model configuration:
-# [[models]]
-# endpoint = "openai"
+# [providers.anthropic]
+# url = "https://api.anthropic.com/v1"
+# api_key = "$ANTHROPIC_API_KEY"
+
+# Model configuration with global unique ID
+# [models.gpt_5_3_codex]
+# provider = "openai"
+# model = "gpt-5.3-codex"
 # type = "openai"
-# model = "gpt-4o"
 # attempts = 3
+
+# [models.gpt_5_2_codex]
+# provider = "openai"
+# model = "gpt-5.2-codex"
+# type = "openai"
+# attempts = 2
+
+# [models.claude-opus]
+# provider = "anthropic"
+# model = "claude-opus-4-6"
+# type = "anthropic"
+# attempts = 3
+
+# Listener configuration (ports)
+# [[listeners]]
+# name = "openai-main"
+# host = "127.0.0.1"
+# port = 8080
+# read_timeout = "60s"
+# write_timeout = "10m"
+# models = ["gpt_5_3_codex", "gpt_5_2_codex"]
+
+# [[listeners]]
+# name = "anthropic-main"
+# host = "127.0.0.1"
+# port = 8081
+# models = ["claude-opus"]

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,55 +27,88 @@ func runServe(_ *cobra.Command, _ []string) {
 		logger.Fatalf("failed to load config: %v", err)
 	}
 
-	logger.Info(
-		"starting hydrallm",
-		"host",
-		cfg.Server.Host,
-		"port",
-		cfg.Server.Port,
-		"models",
-		len(cfg.Models),
-	)
-	for i, m := range cfg.Models {
+	logger.Info("starting hydrallm", "listeners", len(cfg.Listeners))
+
+	// Create servers for each listener
+	servers := make([]*http.Server, 0, len(cfg.Listeners))
+	for i := range cfg.Listeners {
+		l := &cfg.Listeners[i]
+
 		logger.Info(
-			"configured model",
-			"index",
-			i,
-			"endpoint",
-			m.Endpoint,
-			"model",
-			m.Model,
-			"type",
-			m.Type,
-			"attempts",
-			m.Attempts,
+			"configured listener",
+			"name",
+			l.Name,
+			"host",
+			l.Host,
+			"port",
+			l.Port,
+			"models",
+			len(l.Models),
 		)
-	}
-
-	proxy := newProxy(cfg, logger)
-
-	server := &http.Server{
-		Addr:              fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:           proxy,
-		ReadHeaderTimeout: 30 * time.Second,
-		ReadTimeout:       cfg.Server.ReadTimeout,
-		WriteTimeout:      cfg.Server.WriteTimeout,
-	}
-
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("failed to start server: %v", err)
+		for _, m := range l.ResolvedModels {
+			logger.Info(
+				"configured model",
+				"listener",
+				l.Name,
+				"provider",
+				m.Provider,
+				"model",
+				m.Model,
+				"type",
+				m.Type,
+				"attempts",
+				m.Attempts,
+			)
 		}
-	}()
 
-	logger.Info("hydrallm listening", "address", server.Addr)
+		proxy := newProxy(l, cfg, logger)
 
+		server := &http.Server{
+			Addr:              fmt.Sprintf("%s:%d", l.Host, l.Port),
+			Handler:           proxy,
+			ReadHeaderTimeout: 30 * time.Second,
+			ReadTimeout:       l.ReadTimeout,
+			WriteTimeout:      l.WriteTimeout,
+		}
+		servers = append(servers, server)
+	}
+
+	// Start all servers
+	var wg sync.WaitGroup
+	for _, server := range servers {
+		wg.Add(1)
+		go func(s *http.Server) {
+			defer wg.Done()
+			if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.Fatalf("failed to start server %s: %v", s.Addr, err)
+			}
+		}(server)
+		logger.Info("hydrallm listening", "address", server.Addr)
+	}
+
+	// Wait for shutdown signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	<-ctx.Done()
+	logger.Info("shutting down servers...")
 
-	if err := server.Shutdown(context.Background()); err != nil {
-		logger.Error("server shutdown error", "error", err)
+	// Graceful shutdown with timeout
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var shutdownWg sync.WaitGroup
+	for _, server := range servers {
+		shutdownWg.Add(1)
+		go func(s *http.Server) {
+			defer shutdownWg.Done()
+			if err := s.Shutdown(shutdownCtx); err != nil {
+				logger.Error("server shutdown error", "address", s.Addr, "error", err)
+			}
+		}(server)
 	}
+	shutdownWg.Wait()
+
+	wg.Wait()
+	logger.Info("all servers stopped")
 }

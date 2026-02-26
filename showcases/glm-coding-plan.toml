@@ -1,0 +1,98 @@
+# GLM Coding Plan Configuration
+# Multi-listener config for HydraLLM
+
+[log]
+level = "info"
+
+[retry]
+max_cycles = 10
+default_timeout = "10m"
+default_interval = "100ms"
+exponential_backoff = false
+
+# OpenAI-compatible providers
+[providers.zai-coding-plan-global-openai]
+url = "https://api.z.ai/api/coding/paas/v4"
+api_key = "$ZAI_API_KEY"
+strip_version_prefix = true
+
+[providers.zai-coding-plan-cn-openai]
+url = "https://open.bigmodel.cn/api/coding/paas/v4"
+api_key = "$ZAI_API_KEY"
+strip_version_prefix = true
+
+# Anthropic-compatible providers
+[providers.zai-coding-plan-global-anthropic]
+url = "https://api.z.ai/api/anthropic"
+api_key = "$ZAI_API_KEY"
+
+[providers.zai-coding-plan-cn-anthropic]
+url = "https://open.bigmodel.cn/api/anthropic"
+api_key = "$ZAI_API_KEY"
+
+# OpenAI-compatible models (port 8101)
+[models.glm5-openai-global]
+provider = "zai-coding-plan-global-openai"
+model = "glm-5"
+type = "openai"
+attempts = 5
+
+[models.glm5-openai-cn]
+provider = "zai-coding-plan-cn-openai"
+model = "glm-5"
+type = "openai"
+attempts = 2
+
+[models.glm47-openai-global]
+provider = "zai-coding-plan-global-openai"
+model = "glm-4.7"
+type = "openai"
+attempts = 2
+
+[models.glm47-openai-cn]
+provider = "zai-coding-plan-cn-openai"
+model = "glm-4.7"
+type = "openai"
+attempts = 2
+
+# Anthropic-compatible models (port 8102)
+[models.glm5-anthropic-global]
+provider = "zai-coding-plan-global-anthropic"
+model = "glm-5"
+type = "anthropic"
+attempts = 5
+
+[models.glm5-anthropic-cn]
+provider = "zai-coding-plan-cn-anthropic"
+model = "glm-5"
+type = "anthropic"
+attempts = 2
+
+[models.glm47-anthropic-global]
+provider = "zai-coding-plan-global-anthropic"
+model = "glm-4.7"
+type = "anthropic"
+attempts = 2
+
+[models.glm47-anthropic-cn]
+provider = "zai-coding-plan-cn-anthropic"
+model = "glm-4.7"
+type = "anthropic"
+attempts = 2
+
+# Listeners
+[[listeners]]
+name = "openai-compatible"
+host = "0.0.0.0"
+port = 8101
+read_timeout = "60s"
+write_timeout = "10m"
+models = ["glm5-openai-global", "glm5-openai-cn", "glm47-openai-global", "glm47-openai-cn"]
+
+[[listeners]]
+name = "anthropic-compatible"
+host = "0.0.0.0"
+port = 8102
+read_timeout = "60s"
+write_timeout = "10m"
+models = ["glm5-anthropic-global", "glm5-anthropic-cn", "glm47-anthropic-global", "glm47-anthropic-cn"]

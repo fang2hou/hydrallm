@@ -22,14 +22,23 @@ var versionPrefixRegex = regexp.MustCompile(`^/v\d+`)
 
 // RetryTransport implements http.RoundTripper with retry and fallback logic.
 type RetryTransport struct {
-	config          *Config
+	models          []Model
+	providers       map[string]Provider
+	retry           RetryConfig
+	logConfig       LogConfig
 	logger          *log.Logger
 	defaultInterval time.Duration
 	client          *http.Client
 }
 
 // newRetryTransport creates a transport with retry and model fallback capabilities.
-func newRetryTransport(cfg *Config, logger *log.Logger) *RetryTransport {
+func newRetryTransport(
+	models []Model,
+	providers map[string]Provider,
+	retry RetryConfig,
+	logConfig LogConfig,
+	logger *log.Logger,
+) *RetryTransport {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		ForceAttemptHTTP2:     true,
@@ -40,9 +49,12 @@ func newRetryTransport(cfg *Config, logger *log.Logger) *RetryTransport {
 	}
 
 	return &RetryTransport{
-		config:          cfg,
+		models:          models,
+		providers:       providers,
+		retry:           retry,
+		logConfig:       logConfig,
 		logger:          logger,
-		defaultInterval: cfg.Retry.DefaultInterval,
+		defaultInterval: retry.DefaultInterval,
 		client:          &http.Client{Transport: transport},
 	}
 }
@@ -64,17 +76,17 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 
 	isStreaming := isStreamingRequest(req, body)
 	debugEnabled := isDebugEnabled(t.logger)
-	maxCycles := max(t.config.Retry.MaxCycles, 1)
-	exponentialBackoff := t.config.Retry.ExponentialBackoff
+	maxCycles := max(t.retry.MaxCycles, 1)
+	exponentialBackoff := t.retry.ExponentialBackoff
 
 	var lastErr error
 	var lastResp *http.Response
 	totalAttempts := 0
 
 	for cycle := range maxCycles {
-		for modelIdx, model := range t.config.Models {
-			endpoint := t.config.Endpoints[model.Endpoint]
-			interval := model.GetInterval(endpoint, t.defaultInterval)
+		for modelIdx, model := range t.models {
+			provider := t.providers[model.Provider]
+			interval := model.GetInterval(provider, t.defaultInterval)
 
 			for attempt := range model.Attempts {
 				if err = ctx.Err(); err != nil {
@@ -84,8 +96,8 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 				totalAttempts++
 				t.logger.Debug(
 					"trying model",
-					"endpoint",
-					model.Endpoint,
+					"provider",
+					model.Provider,
 					"model",
 					model.Model,
 					"cycle",
@@ -97,7 +109,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 				)
 				resp, err = t.tryModel(ctx, req, body, model, isStreaming, debugEnabled)
 				if err != nil {
-					t.logger.Debug("model request failed", "endpoint", model.Endpoint, "error", err)
+					t.logger.Debug("model request failed", "provider", model.Provider, "error", err)
 					lastErr = err
 
 					// Wait before next attempt
@@ -105,7 +117,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 						cycle,
 						modelIdx,
 						attempt,
-						len(t.config.Models),
+						len(t.models),
 						model.Attempts,
 						maxCycles,
 					) {
@@ -116,8 +128,8 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 
 				t.logger.Info(
 					"response",
-					"endpoint",
-					model.Endpoint,
+					"provider",
+					model.Provider,
 					"model",
 					model.Model,
 					"status",
@@ -127,7 +139,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 				)
 
 				if isRetryable(resp.StatusCode) {
-					t.handleRetryableResponse(resp, model.Endpoint)
+					t.handleRetryableResponse(resp, model.Provider)
 					lastResp = resp
 
 					// Wait before next attempt
@@ -135,7 +147,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (resp *http.Response, err 
 						cycle,
 						modelIdx,
 						attempt,
-						len(t.config.Models),
+						len(t.models),
 						model.Attempts,
 						maxCycles,
 					) {
@@ -198,7 +210,7 @@ func (t *RetryTransport) wait(
 	}
 }
 
-// tryModel attempts to send a request through a specific model endpoint.
+// tryModel attempts to send a request through a specific model provider.
 func (t *RetryTransport) tryModel(
 	ctx context.Context,
 	originalReq *http.Request,
@@ -207,9 +219,9 @@ func (t *RetryTransport) tryModel(
 	isStreaming bool,
 	debugEnabled bool,
 ) (*http.Response, error) {
-	endpoint, ok := t.config.Endpoints[model.Endpoint]
+	provider, ok := t.providers[model.Provider]
 	if !ok {
-		return nil, fmt.Errorf("endpoint %q not found", model.Endpoint)
+		return nil, fmt.Errorf("provider %q not found", model.Provider)
 	}
 
 	// Modify body with model override
@@ -229,14 +241,14 @@ func (t *RetryTransport) tryModel(
 	newReq.RequestURI = "" // Must be empty for client requests
 
 	// Build target URL
-	t.buildTargetURL(newReq, originalReq, endpoint)
+	t.buildTargetURL(newReq, originalReq, provider)
 
 	if debugEnabled {
 		t.logger.Debug("request url", "url", newReq.URL.String())
 	}
 
 	// Set authorization headers
-	t.setAuthHeaders(newReq, model.Type, endpoint)
+	t.setAuthHeaders(newReq, model.Type, provider)
 
 	// Set context with timeout (skip for streaming to avoid mid-stream cancellation)
 	if !isStreaming {
@@ -252,12 +264,12 @@ func (t *RetryTransport) tryModel(
 func (t *RetryTransport) buildTargetURL(
 	newReq *http.Request,
 	originalReq *http.Request,
-	endpoint Endpoint,
+	provider Provider,
 ) {
-	targetURL := endpoint.ParsedURL
+	targetURL := provider.ParsedURL
 	reqPath := originalReq.URL.Path
 
-	if endpoint.StripVersionPrefix {
+	if provider.StripVersionPrefix {
 		reqPath = versionPrefixRegex.ReplaceAllString(reqPath, "")
 	}
 
@@ -274,8 +286,8 @@ func (t *RetryTransport) buildTargetURL(
 }
 
 // setAuthHeaders configures authorization headers based on provider type.
-func (t *RetryTransport) setAuthHeaders(req *http.Request, modelType string, endpoint Endpoint) {
-	apiKey := endpoint.GetAPIKey()
+func (t *RetryTransport) setAuthHeaders(req *http.Request, modelType string, provider Provider) {
+	apiKey := provider.GetAPIKey()
 
 	switch modelType {
 	case "anthropic":
@@ -286,7 +298,7 @@ func (t *RetryTransport) setAuthHeaders(req *http.Request, modelType string, end
 		}
 		req.Header.Set("anthropic-version", "2023-06-01")
 	case "bedrock":
-		t.signAWSRequest(req, endpoint)
+		t.signAWSRequest(req, provider)
 	default: // openai
 		if apiKey == "-" {
 			req.Header.Del("Authorization")
@@ -297,8 +309,8 @@ func (t *RetryTransport) setAuthHeaders(req *http.Request, modelType string, end
 }
 
 // handleRetryableResponse logs and closes a retryable response.
-func (t *RetryTransport) handleRetryableResponse(resp *http.Response, endpoint string) {
-	if t.config.Log.IncludeErrorBody {
+func (t *RetryTransport) handleRetryableResponse(resp *http.Response, provider string) {
+	if t.logConfig.IncludeErrorBody {
 		errBody, err := readErrorBody(resp)
 		if err != nil {
 			t.logger.Warn("failed to read error body", "error", err)
@@ -306,8 +318,8 @@ func (t *RetryTransport) handleRetryableResponse(resp *http.Response, endpoint s
 		_ = resp.Body.Close()
 		t.logger.Info(
 			"retryable status",
-			"endpoint",
-			endpoint,
+			"provider",
+			provider,
 			"status",
 			resp.StatusCode,
 			"error",
@@ -315,14 +327,14 @@ func (t *RetryTransport) handleRetryableResponse(resp *http.Response, endpoint s
 		)
 	} else {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		t.logger.Info("retryable status", "endpoint", endpoint, "status", resp.StatusCode)
+		t.logger.Info("retryable status", "provider", provider, "status", resp.StatusCode)
 		_ = resp.Body.Close()
 	}
 }
 
 // handleErrorResponse logs error response details.
 func (t *RetryTransport) handleErrorResponse(resp *http.Response, model Model) {
-	if t.config.Log.IncludeErrorBody {
+	if t.logConfig.IncludeErrorBody {
 		errBody, err := readErrorBody(resp)
 		if err != nil {
 			t.logger.Warn("failed to read error body", "error", err)
@@ -330,8 +342,8 @@ func (t *RetryTransport) handleErrorResponse(resp *http.Response, model Model) {
 		_ = resp.Body.Close()
 		t.logger.Info(
 			"error status",
-			"endpoint",
-			model.Endpoint,
+			"provider",
+			model.Provider,
 			"model",
 			model.Model,
 			"status",
@@ -343,8 +355,8 @@ func (t *RetryTransport) handleErrorResponse(resp *http.Response, model Model) {
 	} else {
 		t.logger.Info(
 			"error status",
-			"endpoint",
-			model.Endpoint,
+			"provider",
+			model.Provider,
 			"model",
 			model.Model,
 			"status",
@@ -359,21 +371,21 @@ func isRetryable(statusCode int) bool {
 }
 
 // signAWSRequest signs the request with AWS SigV4 for Bedrock using AWS SDK.
-// Only signs if AWS credentials are configured in the endpoint; otherwise skips signing.
-func (t *RetryTransport) signAWSRequest(req *http.Request, endpoint Endpoint) {
-	// Check if credentials are configured in endpoint (not environment variables)
-	if endpoint.AWSAccessKeyID == "" {
+// Only signs if AWS credentials are configured in the provider; otherwise skips signing.
+func (t *RetryTransport) signAWSRequest(req *http.Request, provider Provider) {
+	// Check if credentials are configured in provider (not environment variables)
+	if provider.AWSAccessKeyID == "" {
 		return
 	}
 
-	region := endpoint.GetAWSRegion()
+	region := provider.GetAWSRegion()
 	if region == "" {
 		region = "us-east-1"
 	}
 
-	accessKeyID := endpoint.GetAWSAccessKeyID()
-	secretAccessKey := endpoint.GetAWSSecretAccessKey()
-	sessionToken := endpoint.GetAWSSessionToken()
+	accessKeyID := provider.GetAWSAccessKeyID()
+	secretAccessKey := provider.GetAWSSecretAccessKey()
+	sessionToken := provider.GetAWSSessionToken()
 
 	credsProvider := credentials.NewStaticCredentialsProvider(
 		accessKeyID,
