@@ -8,6 +8,7 @@ on:
 jobs:
   lint:
     name: "🧹 Lint"
+    if: startsWith(github.repository, 'fang2hou/')
     runs-on: ubuntu-latest
     steps:
       - name: "📥 Checkout"
@@ -28,6 +29,7 @@ jobs:
 
   build:
     name: "🔨 Build"
+    if: startsWith(github.repository, 'fang2hou/')
     runs-on: ubuntu-latest
     steps:
       - name: "📥 Checkout"
@@ -46,6 +48,7 @@ jobs:
 
   test:
     name: "🧪 Test"
+    if: startsWith(github.repository, 'fang2hou/')
     runs-on: ubuntu-latest
     steps:
       - name: "📥 Checkout"
