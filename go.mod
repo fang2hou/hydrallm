@@ -1,4 +1,4 @@
-module hydrallm
+module github.com/fang2hou/hydrallm
 
 go 1.26.0
 
