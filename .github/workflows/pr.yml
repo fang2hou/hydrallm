@@ -7,6 +7,7 @@ on:
 jobs:
   check-pr-title:
     name: "📝 Check PR Title"
+    if: startsWith(github.repository, 'fang2hou/')
     runs-on: ubuntu-latest
     steps:
       - name: "📥 Checkout"
