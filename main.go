@@ -21,12 +21,8 @@ func main() {
 	cobra.OnInitialize(initConfig)
 	cmd.PersistentFlags().
 		StringVarP(&cfgFile, "config", "c", "", "config file (default is ~/.config/hydrallm/config.toml)")
-	cmd.PersistentFlags().StringP("host", "", "", "override host")
-	cmd.PersistentFlags().IntP("port", "p", 0, "override port")
 	cmd.PersistentFlags().StringP("log-level", "l", "", "log level (debug, info, warn, error)")
 
-	_ = viper.BindPFlag("server.host", cmd.PersistentFlags().Lookup("host"))
-	_ = viper.BindPFlag("server.port", cmd.PersistentFlags().Lookup("port"))
 	_ = viper.BindPFlag("log.level", cmd.PersistentFlags().Lookup("log-level"))
 
 	cmd.AddCommand(newVersionCmd())

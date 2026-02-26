@@ -13,9 +13,9 @@ import (
 )
 
 func TestShouldWait(t *testing.T) {
-	cfg := &Config{}
-	logger := log.New(io.Discard)
-	transport := newRetryTransport(cfg, logger)
+	transport := &RetryTransport{
+		logger: log.New(io.Discard),
+	}
 
 	// shouldWait(cycle, modelIdx, attempt, numModels, modelAttempts, maxCycles int)
 
@@ -93,7 +93,7 @@ func TestBuildTargetURL(t *testing.T) {
 	t.Run("strip version prefix", func(t *testing.T) {
 		transport := &RetryTransport{}
 		parsedURL, _ := url.Parse("https://api.openai.com")
-		endpoint := Endpoint{
+		provider := Provider{
 			ParsedURL:          parsedURL,
 			StripVersionPrefix: true,
 		}
@@ -101,7 +101,7 @@ func TestBuildTargetURL(t *testing.T) {
 		originalReq, _ := http.NewRequest("POST", "http://localhost/v1/chat/completions", nil)
 		newReq := originalReq.Clone(context.Background())
 
-		transport.buildTargetURL(newReq, originalReq, endpoint)
+		transport.buildTargetURL(newReq, originalReq, provider)
 
 		if newReq.URL.String() != "https://api.openai.com/chat/completions" {
 			t.Errorf("unexpected URL: %s", newReq.URL.String())
@@ -114,7 +114,7 @@ func TestBuildTargetURL(t *testing.T) {
 	t.Run("keep version prefix", func(t *testing.T) {
 		transport := &RetryTransport{}
 		parsedURL, _ := url.Parse("https://api.openai.com")
-		endpoint := Endpoint{
+		provider := Provider{
 			ParsedURL:          parsedURL,
 			StripVersionPrefix: false,
 		}
@@ -122,7 +122,7 @@ func TestBuildTargetURL(t *testing.T) {
 		originalReq, _ := http.NewRequest("POST", "http://localhost/v1/chat/completions", nil)
 		newReq := originalReq.Clone(context.Background())
 
-		transport.buildTargetURL(newReq, originalReq, endpoint)
+		transport.buildTargetURL(newReq, originalReq, provider)
 
 		if newReq.URL.String() != "https://api.openai.com/v1/chat/completions" {
 			t.Errorf("unexpected URL: %s", newReq.URL.String())
@@ -137,8 +137,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("openai with key", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{APIKey: "sk-123"}
-		transport.setAuthHeaders(req, "openai", endpoint)
+		provider := Provider{APIKey: "sk-123"}
+		transport.setAuthHeaders(req, "openai", provider)
 		if req.Header.Get("Authorization") != "Bearer sk-123" {
 			t.Errorf("unexpected Authorization header for openai")
 		}
@@ -147,8 +147,8 @@ func TestSetAuthHeaders(t *testing.T) {
 	t.Run("openai skip header", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
 		req.Header.Set("Authorization", "Bearer something")
-		endpoint := Endpoint{APIKey: "-"}
-		transport.setAuthHeaders(req, "openai", endpoint)
+		provider := Provider{APIKey: "-"}
+		transport.setAuthHeaders(req, "openai", provider)
 		if req.Header.Get("Authorization") != "" {
 			t.Errorf("expected Authorization header to be deleted")
 		}
@@ -156,8 +156,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("openai empty key does not modify header", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{APIKey: ""}
-		transport.setAuthHeaders(req, "openai", endpoint)
+		provider := Provider{APIKey: ""}
+		transport.setAuthHeaders(req, "openai", provider)
 		if req.Header.Get("Authorization") != "" {
 			t.Errorf("expected no Authorization header for empty key")
 		}
@@ -165,8 +165,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("anthropic with key", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{APIKey: "anthropic-key"}
-		transport.setAuthHeaders(req, "anthropic", endpoint)
+		provider := Provider{APIKey: "anthropic-key"}
+		transport.setAuthHeaders(req, "anthropic", provider)
 		if req.Header.Get("x-api-key") != "anthropic-key" {
 			t.Errorf("unexpected x-api-key header for anthropic")
 		}
@@ -178,8 +178,8 @@ func TestSetAuthHeaders(t *testing.T) {
 	t.Run("anthropic skip header", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
 		req.Header.Set("x-api-key", "something")
-		endpoint := Endpoint{APIKey: "-"}
-		transport.setAuthHeaders(req, "anthropic", endpoint)
+		provider := Provider{APIKey: "-"}
+		transport.setAuthHeaders(req, "anthropic", provider)
 		if req.Header.Get("x-api-key") != "" {
 			t.Errorf("expected x-api-key header to be deleted")
 		}
@@ -187,8 +187,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("anthropic empty key does not modify header", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{APIKey: ""}
-		transport.setAuthHeaders(req, "anthropic", endpoint)
+		provider := Provider{APIKey: ""}
+		transport.setAuthHeaders(req, "anthropic", provider)
 		if req.Header.Get("x-api-key") != "" {
 			t.Errorf("expected no x-api-key header for empty key")
 		}
@@ -200,8 +200,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("bedrock without creds skips signing", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{AWSAccessKeyID: ""}
-		transport.setAuthHeaders(req, "bedrock", endpoint)
+		provider := Provider{AWSAccessKeyID: ""}
+		transport.setAuthHeaders(req, "bedrock", provider)
 		if req.Header.Get("Authorization") != "" {
 			t.Errorf("expected no Authorization header for bedrock without creds")
 		}
@@ -209,8 +209,8 @@ func TestSetAuthHeaders(t *testing.T) {
 
 	t.Run("unknown type defaults to openai behavior", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", "/", nil)
-		endpoint := Endpoint{APIKey: "test-key"}
-		transport.setAuthHeaders(req, "unknown-type", endpoint)
+		provider := Provider{APIKey: "test-key"}
+		transport.setAuthHeaders(req, "unknown-type", provider)
 		if req.Header.Get("Authorization") != "Bearer test-key" {
 			t.Errorf("expected Bearer token for unknown type")
 		}
@@ -279,15 +279,15 @@ func TestHandleRetryableResponse(t *testing.T) {
 	t.Run("include error body", func(t *testing.T) {
 		logOutput := &bytes.Buffer{}
 		logger := log.New(logOutput)
-		cfg := &Config{Log: LogConfig{IncludeErrorBody: true}}
-		transport := &RetryTransport{config: cfg, logger: logger}
+		logConfig := LogConfig{IncludeErrorBody: true}
+		transport := &RetryTransport{logConfig: logConfig, logger: logger}
 
 		resp := &http.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       io.NopCloser(bytes.NewReader([]byte("rate limited error"))),
 		}
 
-		transport.handleRetryableResponse(resp, "test-endpoint")
+		transport.handleRetryableResponse(resp, "test-provider")
 		if !bytes.Contains(logOutput.Bytes(), []byte("rate limited error")) {
 			t.Errorf("expected error body in log, got: %s", logOutput.String())
 		}
@@ -296,15 +296,15 @@ func TestHandleRetryableResponse(t *testing.T) {
 	t.Run("exclude error body", func(t *testing.T) {
 		logOutput := &bytes.Buffer{}
 		logger := log.New(logOutput)
-		cfg := &Config{Log: LogConfig{IncludeErrorBody: false}}
-		transport := &RetryTransport{config: cfg, logger: logger}
+		logConfig := LogConfig{IncludeErrorBody: false}
+		transport := &RetryTransport{logConfig: logConfig, logger: logger}
 
 		resp := &http.Response{
 			StatusCode: http.StatusTooManyRequests,
 			Body:       io.NopCloser(bytes.NewReader([]byte("rate limited error 2"))),
 		}
 
-		transport.handleRetryableResponse(resp, "test-endpoint")
+		transport.handleRetryableResponse(resp, "test-provider")
 		if bytes.Contains(logOutput.Bytes(), []byte("rate limited error 2")) {
 			t.Errorf("did not expect error body in log")
 		}
@@ -315,14 +315,14 @@ func TestHandleErrorResponse(t *testing.T) {
 	t.Run("include error body", func(t *testing.T) {
 		logOutput := &bytes.Buffer{}
 		logger := log.New(logOutput)
-		cfg := &Config{Log: LogConfig{IncludeErrorBody: true}}
-		transport := &RetryTransport{config: cfg, logger: logger}
+		logConfig := LogConfig{IncludeErrorBody: true}
+		transport := &RetryTransport{logConfig: logConfig, logger: logger}
 
 		resp := &http.Response{
 			StatusCode: http.StatusBadRequest,
 			Body:       io.NopCloser(bytes.NewReader([]byte("bad request error"))),
 		}
-		model := Model{Endpoint: "e1", Model: "gpt-4"}
+		model := Model{Provider: "p1", Model: "gpt-4"}
 
 		transport.handleErrorResponse(resp, model)
 		if !bytes.Contains(logOutput.Bytes(), []byte("bad request error")) {
@@ -339,14 +339,14 @@ func TestHandleErrorResponse(t *testing.T) {
 	t.Run("exclude error body", func(t *testing.T) {
 		logOutput := &bytes.Buffer{}
 		logger := log.New(logOutput)
-		cfg := &Config{Log: LogConfig{IncludeErrorBody: false}}
-		transport := &RetryTransport{config: cfg, logger: logger}
+		logConfig := LogConfig{IncludeErrorBody: false}
+		transport := &RetryTransport{logConfig: logConfig, logger: logger}
 
 		resp := &http.Response{
 			StatusCode: http.StatusBadRequest,
 			Body:       io.NopCloser(bytes.NewReader([]byte("bad request error 2"))),
 		}
-		model := Model{Endpoint: "e1", Model: "gpt-4"}
+		model := Model{Provider: "p1", Model: "gpt-4"}
 
 		transport.handleErrorResponse(resp, model)
 		if bytes.Contains(logOutput.Bytes(), []byte("bad request error 2")) {
@@ -368,13 +368,13 @@ func TestSignAWSRequest(t *testing.T) {
 			bytes.NewReader([]byte(`{}`)),
 		)
 
-		endpoint := Endpoint{
+		provider := Provider{
 			AWSRegion:          "us-east-1",
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Authorization") == "" {
 			t.Error("expected Authorization header to be set by aws signer")
@@ -399,14 +399,14 @@ func TestSignAWSRequest(t *testing.T) {
 			bytes.NewReader([]byte(`{}`)),
 		)
 
-		endpoint := Endpoint{
+		provider := Provider{
 			AWSRegion:          "us-east-1",
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 			AWSSessionToken:    "mock-session-token",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Authorization") == "" {
 			t.Error("expected Authorization header to be set by aws signer")
@@ -432,13 +432,13 @@ func TestSignAWSRequest(t *testing.T) {
 			bytes.NewReader([]byte(`{}`)),
 		)
 
-		endpoint := Endpoint{
+		provider := Provider{
 			// AWSRegion is empty - should default to us-east-1
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Authorization") == "" {
 			t.Error("expected Authorization header to be set by aws signer")
@@ -464,13 +464,13 @@ func TestSignAWSRequest(t *testing.T) {
 			bytes.NewReader([]byte(`{}`)),
 		)
 
-		endpoint := Endpoint{
+		provider := Provider{
 			AWSRegion:          "us-east-1",
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Content-Type") != "application/json" {
 			t.Errorf(
@@ -493,13 +493,13 @@ func TestSignAWSRequest(t *testing.T) {
 		)
 		req.Header.Set("Content-Type", "application/octet-stream")
 
-		endpoint := Endpoint{
+		provider := Provider{
 			AWSRegion:          "us-east-1",
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Content-Type") != "application/octet-stream" {
 			t.Errorf(
@@ -521,13 +521,13 @@ func TestSignAWSRequest(t *testing.T) {
 			nil,
 		)
 
-		endpoint := Endpoint{
+		provider := Provider{
 			AWSRegion:          "us-east-1",
 			AWSAccessKeyID:     "mock-key",
 			AWSSecretAccessKey: "mock-secret",
 		}
 
-		transport.signAWSRequest(req, endpoint)
+		transport.signAWSRequest(req, provider)
 
 		if req.Header.Get("Authorization") == "" {
 			t.Error("expected Authorization header to be set by aws signer")
@@ -548,8 +548,8 @@ func TestSignAWSRequestNoCredentials(t *testing.T) {
 	)
 
 	// No credentials - should skip signing
-	endpoint := Endpoint{}
-	transport.signAWSRequest(req, endpoint)
+	provider := Provider{}
+	transport.signAWSRequest(req, provider)
 
 	if req.Header.Get("Authorization") != "" {
 		t.Error("expected no Authorization header when no credentials provided")
@@ -560,7 +560,7 @@ func TestBuildTargetURLWithBasePath(t *testing.T) {
 	transport := &RetryTransport{}
 
 	parsedURL, _ := url.Parse("https://api.example.com/base")
-	endpoint := Endpoint{
+	provider := Provider{
 		ParsedURL:          parsedURL,
 		StripVersionPrefix: false,
 	}
@@ -568,7 +568,7 @@ func TestBuildTargetURLWithBasePath(t *testing.T) {
 	originalReq, _ := http.NewRequest("POST", "http://localhost/v1/chat", nil)
 	newReq := originalReq.Clone(context.Background())
 
-	transport.buildTargetURL(newReq, originalReq, endpoint)
+	transport.buildTargetURL(newReq, originalReq, provider)
 
 	expected := "https://api.example.com/base/v1/chat"
 	if newReq.URL.String() != expected {
@@ -581,49 +581,49 @@ func TestBuildTargetURLTrailingSlash(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		endpointURL  string
+		providerURL  string
 		requestPath  string
 		stripVersion bool
 		expected     string
 	}{
 		{
 			name:         "URL with trailing slash and request with leading slash",
-			endpointURL:  "https://api.example.com/v1/",
+			providerURL:  "https://api.example.com/v1/",
 			requestPath:  "/chat/completions",
 			stripVersion: false,
 			expected:     "https://api.example.com/v1/chat/completions",
 		},
 		{
 			name:         "URL with trailing slash, strip version",
-			endpointURL:  "https://api.example.com/v1/",
+			providerURL:  "https://api.example.com/v1/",
 			requestPath:  "/v1/chat/completions",
 			stripVersion: true,
 			expected:     "https://api.example.com/v1/chat/completions",
 		},
 		{
 			name:         "URL without trailing slash",
-			endpointURL:  "https://api.example.com/v1",
+			providerURL:  "https://api.example.com/v1",
 			requestPath:  "/chat/completions",
 			stripVersion: false,
 			expected:     "https://api.example.com/v1/chat/completions",
 		},
 		{
 			name:         "URL with double trailing slash",
-			endpointURL:  "https://api.example.com/v1//",
+			providerURL:  "https://api.example.com/v1//",
 			requestPath:  "/chat/completions",
 			stripVersion: false,
 			expected:     "https://api.example.com/v1/chat/completions",
 		},
 		{
 			name:         "Empty path with trailing slash",
-			endpointURL:  "https://api.example.com/",
+			providerURL:  "https://api.example.com/",
 			requestPath:  "/v1/chat/completions",
 			stripVersion: false,
 			expected:     "https://api.example.com/v1/chat/completions",
 		},
 		{
 			name:         "Base path with trailing slash",
-			endpointURL:  "https://api.example.com/base/path/",
+			providerURL:  "https://api.example.com/base/path/",
 			requestPath:  "/v1/chat",
 			stripVersion: false,
 			expected:     "https://api.example.com/base/path/v1/chat",
@@ -632,8 +632,8 @@ func TestBuildTargetURLTrailingSlash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			parsedURL, _ := url.Parse(tt.endpointURL)
-			endpoint := Endpoint{
+			parsedURL, _ := url.Parse(tt.providerURL)
+			provider := Provider{
 				ParsedURL:          parsedURL,
 				StripVersionPrefix: tt.stripVersion,
 			}
@@ -641,7 +641,7 @@ func TestBuildTargetURLTrailingSlash(t *testing.T) {
 			originalReq, _ := http.NewRequest("POST", "http://localhost"+tt.requestPath, nil)
 			newReq := originalReq.Clone(context.Background())
 
-			transport.buildTargetURL(newReq, originalReq, endpoint)
+			transport.buildTargetURL(newReq, originalReq, provider)
 
 			if newReq.URL.String() != tt.expected {
 				t.Errorf("unexpected URL: %s, want %s", newReq.URL.String(), tt.expected)
@@ -650,25 +650,24 @@ func TestBuildTargetURLTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestTryModelEndpointNotFound(t *testing.T) {
-	cfg := &Config{
-		Endpoints: map[string]Endpoint{
-			"existing": {URL: "http://localhost"},
-		},
-		Models: []Model{
-			{Endpoint: "nonexistent", Model: "test", Type: "openai"},
-		},
+func TestTryModelProviderNotFound(t *testing.T) {
+	providers := map[string]Provider{
+		"existing": {URL: "http://localhost"},
 	}
-	_ = cfg.validate()
-
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(
+		[]Model{},
+		providers,
+		RetryConfig{},
+		LogConfig{},
+		log.New(io.Discard),
+	)
 
 	originalReq, _ := http.NewRequest(
 		"POST",
 		"http://localhost/test",
 		bytes.NewReader([]byte(`{}`)),
 	)
-	model := Model{Endpoint: "nonexistent", Model: "test", Type: "openai"}
+	model := Model{Provider: "nonexistent", Model: "test", Type: "openai"}
 
 	_, err := transport.tryModel(
 		context.Background(),
@@ -679,6 +678,6 @@ func TestTryModelEndpointNotFound(t *testing.T) {
 		false,
 	)
 	if err == nil {
-		t.Error("expected error for nonexistent endpoint")
+		t.Error("expected error for nonexistent provider")
 	}
 }

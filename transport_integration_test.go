@@ -6,12 +6,21 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/log"
 )
+
+func mustParseURL(raw string) *url.URL {
+	u, err := url.Parse(raw)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
 
 func TestTransport_RoundTrip_Success(t *testing.T) {
 	var requestCount int32
@@ -23,22 +32,26 @@ func TestTransport_RoundTrip_Success(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 2},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 2,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(
 		context.Background(),
@@ -70,22 +83,26 @@ func TestTransport_RoundTrip_Retry(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 2},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 2,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(
 		context.Background(),
@@ -117,22 +134,26 @@ func TestTransport_RoundTrip_MultiCycle(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       2,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 2},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 2,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       2,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(
 		context.Background(),
@@ -168,24 +189,35 @@ func TestTransport_RoundTrip_Fallback(t *testing.T) {
 	}))
 	defer ts2.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock1",
+			Model:    "test-model-1",
+			Type:     "openai",
+			Attempts: 1,
+			Timeout:  time.Second,
 		},
-		Endpoints: map[string]Endpoint{
-			"mock1": {URL: ts1.URL},
-			"mock2": {URL: ts2.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock1", Model: "test-model-1", Type: "openai", Attempts: 1},
-			{Endpoint: "mock2", Model: "test-model-2", Type: "openai", Attempts: 1},
+		{
+			ID:       "m2",
+			Provider: "mock2",
+			Model:    "test-model-2",
+			Type:     "openai",
+			Attempts: 1,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock1": {URL: ts1.URL, ParsedURL: mustParseURL(ts1.URL)},
+		"mock2": {URL: ts2.URL, ParsedURL: mustParseURL(ts2.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://original/path", nil)
 
@@ -211,22 +243,26 @@ func TestTransport_RoundTrip_Cancellation(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Attempts: 2},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 2,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	req, _ := http.NewRequestWithContext(ctx, "POST", "http://original/path", nil)
@@ -250,28 +286,26 @@ func TestTransport_RoundTrip_Timeout(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{
-				Endpoint: "mock",
-				Model:    "test-model",
-				Type:     "openai",
-				Attempts: 1,
-				Timeout:  50 * time.Millisecond,
-			},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 1,
+			Timeout:  50 * time.Millisecond,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://original/path", nil)
 
@@ -294,22 +328,26 @@ func TestTransport_RoundTrip_EmptyBody(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 1},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 1,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	// Request with nil body
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://original/path", nil)
@@ -329,22 +367,26 @@ func TestTransport_RoundTrip_AllAttemptsExhausted(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: ts.URL},
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 2},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 2,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		"mock": {URL: ts.URL, ParsedURL: mustParseURL(ts.URL)},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(
 		context.Background(),
@@ -364,22 +406,27 @@ func TestTransport_RoundTrip_AllAttemptsExhausted(t *testing.T) {
 }
 
 func TestTransport_RoundTrip_ConnectionError(t *testing.T) {
-	cfg := &Config{
-		Retry: RetryConfig{
-			MaxCycles:       1,
-			DefaultInterval: time.Millisecond,
-			DefaultTimeout:  time.Second,
-		},
-		Endpoints: map[string]Endpoint{
-			"mock": {URL: "http://127.0.0.1:1"}, // Invalid port that won't connect
-		},
-		Models: []Model{
-			{Endpoint: "mock", Model: "test-model", Type: "openai", Attempts: 1},
+	models := []Model{
+		{
+			ID:       "m1",
+			Provider: "mock",
+			Model:    "test-model",
+			Type:     "openai",
+			Attempts: 1,
+			Timeout:  time.Second,
 		},
 	}
-	_ = cfg.validate()
+	providers := map[string]Provider{
+		// Invalid port that won't connect
+		"mock": {URL: "http://127.0.0.1:1", ParsedURL: mustParseURL("http://127.0.0.1:1")},
+	}
+	retry := RetryConfig{
+		MaxCycles:       1,
+		DefaultInterval: time.Millisecond,
+		DefaultTimeout:  time.Second,
+	}
 
-	transport := newRetryTransport(cfg, log.New(io.Discard))
+	transport := newRetryTransport(models, providers, retry, LogConfig{}, log.New(io.Discard))
 
 	req, _ := http.NewRequestWithContext(
 		context.Background(),

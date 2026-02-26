@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,19 +15,11 @@ import (
 
 // Config holds the application configuration.
 type Config struct {
-	Server    ServerConfig        `mapstructure:"server"`
 	Log       LogConfig           `mapstructure:"log"`
 	Retry     RetryConfig         `mapstructure:"retry"`
-	Endpoints map[string]Endpoint `mapstructure:"endpoints"`
-	Models    []Model             `mapstructure:"models"`
-}
-
-// ServerConfig holds server-related configuration.
-type ServerConfig struct {
-	Host         string        `mapstructure:"host"`
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+	Providers map[string]Provider `mapstructure:"providers"`
+	Models    map[string]Model    `mapstructure:"models"`
+	Listeners []Listener          `mapstructure:"listeners"`
 }
 
 // LogConfig holds logging configuration.
@@ -42,11 +36,10 @@ type RetryConfig struct {
 	ExponentialBackoff bool          `mapstructure:"exponential_backoff"`
 }
 
-// Endpoint represents an upstream API endpoint.
-type Endpoint struct {
+// Provider represents an upstream API provider.
+type Provider struct {
 	URL                string        `mapstructure:"url"`
 	APIKey             string        `mapstructure:"api_key"`
-	Type               string        `mapstructure:"type"`
 	StripVersionPrefix bool          `mapstructure:"strip_version_prefix"`
 	Interval           time.Duration `mapstructure:"interval"`
 	AWSRegion          string        `mapstructure:"aws_region"`
@@ -58,53 +51,68 @@ type Endpoint struct {
 
 // Model represents a model configuration with retry settings.
 type Model struct {
-	Endpoint string        `mapstructure:"endpoint"`
-	Type     string        `mapstructure:"type"`
+	ID       string        // Global unique ID (map key)
+	Provider string        `mapstructure:"provider"`
 	Model    string        `mapstructure:"model"`
+	Type     string        `mapstructure:"type"`
 	Attempts int           `mapstructure:"attempts"`
 	Timeout  time.Duration `mapstructure:"timeout"`
 	Interval time.Duration `mapstructure:"interval"`
 }
 
+// Listener represents a local listening configuration.
+type Listener struct {
+	Name         string        `mapstructure:"name"`
+	Host         string        `mapstructure:"host"`
+	Port         int           `mapstructure:"port"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout"`
+	Models       []string      `mapstructure:"models"` // Model IDs
+
+	// Resolved at runtime
+	ResolvedModels []Model `mapstructure:"-"`
+	ConfigType     string  `mapstructure:"-"` // Unified API type for this listener
+}
+
 // GetURL resolves the URL, supporting environment variable expansion.
-func (e *Endpoint) GetURL() string {
-	return resolveEnvOrValue(e.URL)
+func (p *Provider) GetURL() string {
+	return resolveEnvOrValue(p.URL)
 }
 
 // GetAPIKey resolves the API key, supporting environment variable expansion.
-func (e *Endpoint) GetAPIKey() string {
-	return resolveEnvOrValue(e.APIKey)
+func (p *Provider) GetAPIKey() string {
+	return resolveEnvOrValue(p.APIKey)
 }
 
-// GetInterval returns the model's interval, or the endpoint's interval if not set.
-func (m *Model) GetInterval(endpoint Endpoint, defaultInterval time.Duration) time.Duration {
+// GetInterval returns the model's interval, or the provider's interval if not set.
+func (m *Model) GetInterval(provider Provider, defaultInterval time.Duration) time.Duration {
 	if m.Interval > 0 {
 		return m.Interval
 	}
-	if endpoint.Interval > 0 {
-		return endpoint.Interval
+	if provider.Interval > 0 {
+		return provider.Interval
 	}
 	return defaultInterval
 }
 
 // GetAWSRegion returns the AWS region, falling back to environment variables.
-func (e *Endpoint) GetAWSRegion() string {
-	return resolveEnvOrValue(e.AWSRegion)
+func (p *Provider) GetAWSRegion() string {
+	return resolveEnvOrValue(p.AWSRegion)
 }
 
 // GetAWSAccessKeyID returns the AWS access key ID, falling back to environment variables.
-func (e *Endpoint) GetAWSAccessKeyID() string {
-	return resolveEnvOrValue(e.AWSAccessKeyID)
+func (p *Provider) GetAWSAccessKeyID() string {
+	return resolveEnvOrValue(p.AWSAccessKeyID)
 }
 
 // GetAWSSecretAccessKey returns the AWS secret access key, falling back to environment variables.
-func (e *Endpoint) GetAWSSecretAccessKey() string {
-	return resolveEnvOrValue(e.AWSSecretAccessKey)
+func (p *Provider) GetAWSSecretAccessKey() string {
+	return resolveEnvOrValue(p.AWSSecretAccessKey)
 }
 
 // GetAWSSessionToken returns the AWS session token, falling back to environment variables.
-func (e *Endpoint) GetAWSSessionToken() string {
-	return resolveEnvOrValue(e.AWSSessionToken)
+func (p *Provider) GetAWSSessionToken() string {
+	return resolveEnvOrValue(p.AWSSessionToken)
 }
 
 // resolveEnvOrValue returns the environment variable value if the input starts with $,
@@ -142,18 +150,6 @@ func loadConfig() (*Config, error) {
 
 // applyDefaults sets default values for unset configuration fields.
 func applyDefaults(c *Config) {
-	if c.Server.Host == "" {
-		c.Server.Host = "127.0.0.1"
-	}
-	if c.Server.Port == 0 {
-		c.Server.Port = 8080
-	}
-	if c.Server.ReadTimeout == 0 {
-		c.Server.ReadTimeout = time.Minute
-	}
-	if c.Server.WriteTimeout == 0 {
-		c.Server.WriteTimeout = 10 * time.Minute
-	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"
 	}
@@ -166,59 +162,84 @@ func applyDefaults(c *Config) {
 	if c.Retry.DefaultInterval == 0 {
 		c.Retry.DefaultInterval = 100 * time.Millisecond
 	}
+
+	// Apply listener defaults
+	for i := range c.Listeners {
+		l := &c.Listeners[i]
+		if l.Host == "" {
+			l.Host = "127.0.0.1"
+		}
+		if l.ReadTimeout == 0 {
+			l.ReadTimeout = time.Minute
+		}
+		if l.WriteTimeout == 0 {
+			l.WriteTimeout = 10 * time.Minute
+		}
+	}
 }
 
 // validate checks the configuration for errors and parses derived fields.
 func (c *Config) validate() error {
+	// Validate providers
+	if len(c.Providers) == 0 {
+		return errors.New("at least one provider must be configured")
+	}
+
+	// Parse and validate provider URLs
+	for name, p := range c.Providers {
+		resolvedURL := p.GetURL()
+		parsedURL, err := url.Parse(resolvedURL)
+		if err != nil {
+			return fmt.Errorf("invalid URL for provider %q: %w", name, err)
+		}
+		if parsedURL.Scheme == "" || parsedURL.Host == "" {
+			return fmt.Errorf(
+				"invalid URL for provider %q: must include scheme and host, got %q",
+				name,
+				resolvedURL,
+			)
+		}
+
+		scheme := strings.ToLower(parsedURL.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf(
+				"invalid URL for provider %q: unsupported scheme %q (supported: http, https)",
+				name,
+				parsedURL.Scheme,
+			)
+		}
+
+		// Normalize path by removing trailing slashes
+		parsedURL.Path = strings.TrimRight(parsedURL.Path, "/")
+		p.ParsedURL = parsedURL
+		c.Providers[name] = p
+	}
+
+	// Validate models
 	if len(c.Models) == 0 {
 		return errors.New("at least one model must be configured")
 	}
 
-	// Parse endpoint URLs
-	for name, ep := range c.Endpoints {
-		resolvedURL := ep.GetURL()
-		parsedURL, err := url.Parse(resolvedURL)
-		if err != nil {
-			return fmt.Errorf("invalid URL for endpoint %q: %w", name, err)
-		}
-		// Normalize path by removing trailing slashes
-		parsedURL.Path = strings.TrimRight(parsedURL.Path, "/")
-		ep.ParsedURL = parsedURL
-		c.Endpoints[name] = ep
-	}
+	for id, m := range c.Models {
+		m.ID = id
 
-	// Validate models
-	configType := ""
-	for i := range c.Models {
-		m := &c.Models[i]
-
-		if m.Endpoint == "" {
-			return fmt.Errorf("model %d: endpoint is required", i)
+		if m.Provider == "" {
+			return fmt.Errorf("model %q: provider is required", id)
 		}
-		endpoint, ok := c.Endpoints[m.Endpoint]
+		provider, ok := c.Providers[m.Provider]
 		if !ok {
-			return fmt.Errorf("model %d: endpoint %q not found", i, m.Endpoint)
+			return fmt.Errorf("model %q: provider %q not found", id, m.Provider)
 		}
 		if m.Model == "" {
-			return fmt.Errorf("model %d: model is required", i)
+			return fmt.Errorf("model %q: model is required", id)
 		}
 		if m.Type == "" {
-			return fmt.Errorf("model %d: type is required", i)
+			return fmt.Errorf("model %q: type is required", id)
 		}
 		if !isSupportedModelType(m.Type) {
 			return fmt.Errorf(
-				"model %d: unsupported type %q (supported: openai, anthropic, bedrock)",
-				i,
-				m.Type,
-			)
-		}
-		if configType == "" {
-			configType = m.Type
-		} else if m.Type != configType {
-			return fmt.Errorf(
-				"model %d: mixed model types are not allowed (expected %q, got %q)",
-				i,
-				configType,
+				"model %q: unsupported type %q (supported: openai, anthropic, bedrock)",
+				id,
 				m.Type,
 			)
 		}
@@ -229,12 +250,87 @@ func (c *Config) validate() error {
 			m.Timeout = c.Retry.DefaultTimeout
 		}
 
-		// Validate bedrock endpoint credentials
+		// Validate bedrock provider credentials
 		if m.Type == "bedrock" {
-			if err := validateBedrockCredentials(m.Endpoint, endpoint); err != nil {
-				return fmt.Errorf("model %d: %w", i, err)
+			if err := validateBedrockCredentials(m.Provider, provider); err != nil {
+				return fmt.Errorf("model %q: %w", id, err)
 			}
 		}
+
+		c.Models[id] = m
+	}
+
+	// Validate listeners
+	if len(c.Listeners) == 0 {
+		return errors.New("at least one listener must be configured")
+	}
+
+	listenerNames := make(map[string]struct{}, len(c.Listeners))
+	listenerAddrs := make(map[string]string, len(c.Listeners))
+
+	for i := range c.Listeners {
+		l := &c.Listeners[i]
+
+		if l.Name == "" {
+			return fmt.Errorf("listener %d: name is required", i)
+		}
+		if _, exists := listenerNames[l.Name]; exists {
+			return fmt.Errorf("listener %q: duplicate name", l.Name)
+		}
+		listenerNames[l.Name] = struct{}{}
+
+		if l.Port == 0 {
+			return fmt.Errorf("listener %q: port is required", l.Name)
+		}
+		if l.Port < 1 || l.Port > 65535 {
+			return fmt.Errorf(
+				"listener %q: port must be between 1 and 65535, got %d",
+				l.Name,
+				l.Port,
+			)
+		}
+
+		listenerAddr := net.JoinHostPort(l.Host, strconv.Itoa(l.Port))
+		if existingName, exists := listenerAddrs[listenerAddr]; exists {
+			return fmt.Errorf(
+				"listener %q: duplicate listen address %q (already used by listener %q)",
+				l.Name,
+				listenerAddr,
+				existingName,
+			)
+		}
+		listenerAddrs[listenerAddr] = l.Name
+
+		if len(l.Models) == 0 {
+			return fmt.Errorf("listener %q: must reference at least one model", l.Name)
+		}
+
+		// Resolve models and validate type consistency
+		l.ResolvedModels = make([]Model, 0, len(l.Models))
+		listenerType := ""
+
+		for _, modelID := range l.Models {
+			m, ok := c.Models[modelID]
+			if !ok {
+				return fmt.Errorf("listener %q: model %q not found", l.Name, modelID)
+			}
+
+			if listenerType == "" {
+				listenerType = m.Type
+			} else if m.Type != listenerType {
+				return fmt.Errorf(
+					"listener %q: mixed model types are not allowed (expected %q, got %q from model %q)",
+					l.Name,
+					listenerType,
+					m.Type,
+					modelID,
+				)
+			}
+
+			l.ResolvedModels = append(l.ResolvedModels, m)
+		}
+
+		l.ConfigType = listenerType
 	}
 
 	return nil
@@ -249,28 +345,28 @@ func isSupportedModelType(modelType string) bool {
 	}
 }
 
-// validateBedrockCredentials validates AWS credentials for bedrock endpoints.
+// validateBedrockCredentials validates AWS credentials for bedrock providers.
 // For long-term credentials: aws_access_key_id + aws_secret_access_key are required.
 // For temporary credentials: aws_session_token is additionally required.
 // If no credentials are configured, signing is skipped (use environment variables or IAM roles).
-func validateBedrockCredentials(endpointName string, ep Endpoint) error {
-	hasAccessKeyID := ep.AWSAccessKeyID != ""
-	hasSecretAccessKey := ep.AWSSecretAccessKey != ""
-	hasSessionToken := ep.AWSSessionToken != ""
+func validateBedrockCredentials(providerName string, p Provider) error {
+	hasAccessKeyID := p.AWSAccessKeyID != ""
+	hasSecretAccessKey := p.AWSSecretAccessKey != ""
+	hasSessionToken := p.AWSSessionToken != ""
 
 	// access_key_id and secret_access_key must be configured together
 	if hasAccessKeyID != hasSecretAccessKey {
 		return fmt.Errorf(
-			"endpoint %q: bedrock requires both aws_access_key_id and aws_secret_access_key to be configured together",
-			endpointName,
+			"provider %q: bedrock requires both aws_access_key_id and aws_secret_access_key to be configured together",
+			providerName,
 		)
 	}
 
 	// session_token requires access_key_id and secret_access_key
 	if hasSessionToken && !hasAccessKeyID {
 		return fmt.Errorf(
-			"endpoint %q: bedrock aws_session_token requires aws_access_key_id and aws_secret_access_key",
-			endpointName,
+			"provider %q: bedrock aws_session_token requires aws_access_key_id and aws_secret_access_key",
+			providerName,
 		)
 	}
 
