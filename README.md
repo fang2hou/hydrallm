@@ -1,5 +1,25 @@
 # HydraLLM
 
+English | [简体中文](README_CN.md) | [日本語](README_JP.md)
+
+```mermaid
+flowchart LR
+  C["Retry Current Model"] -->|"fail"| D["Fallback Next Model"];
+  D -->|"next"| C;
+  C -->|"success"| E["✅ Return Response"];
+  D -->|"exhausted"| F["❌ Return Error"];
+
+  classDef muted fill:#F8FAFC,stroke:#CBD5E1,color:#64748B,stroke-width:1px;
+  classDef flow fill:#FFF7ED,stroke:#EA580C,color:#7C2D12,stroke-width:3px;
+  classDef flow2 fill:#FEF3C7,stroke:#D97706,color:#78350F,stroke-width:3px;
+  classDef ok fill:#DCFCE7,stroke:#16A34A,color:#14532D,stroke-width:1.5px;
+  classDef bad fill:#FEE2E2,stroke:#DC2626,color:#7F1D1D,stroke-width:1.5px;
+  class C flow;
+  class D flow2;
+  class E ok;
+  class F bad;
+```
+
 HydraLLM is a high-performance LLM API proxy with automatic retry and model fallback across OpenAI-compatible, Anthropic, and AWS Bedrock providers.
 
 When a request fails, HydraLLM retries the current model, then falls back to the next configured model until success or exhaustion.
@@ -33,7 +53,7 @@ Download from [GitHub Releases](https://github.com/fang2hou/hydrallm/releases).
 
 ## 🚀 Quick Start (GLM Coding Plan)
 
-The official GLM showcase exposes two listeners in one config:
+The GLM showcase included with this project exposes two listeners in one config:
 
 - OpenAI-compatible API on `http://127.0.0.1:8101`
 - Anthropic-compatible API on `http://127.0.0.1:8102`
