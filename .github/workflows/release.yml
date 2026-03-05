@@ -134,7 +134,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
 
       - name: "📤 Upload artifacts for homebrew update"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-info
           path: |
@@ -148,7 +148,7 @@ jobs:
     needs: release
     steps:
       - name: "📥 Download artifacts"
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-info
           path: dist
